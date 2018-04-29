@@ -8,17 +8,28 @@ import (
 	"io/ioutil"
 	"bytes"
 	"strconv"
-	"github.com/elazarl/goproxy"
+	"github.com/selslack/goproxy"
 	"github.com/jakehl/goid"
 	"github.com/deckarep/golang-set"
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/mgo.v2"
 )
 
-var Session, _ = mgo.Dial("mongodb://127.0.0.1:27017/")
-var DB = Session.DB("goFoxy1")
-var VulnCollect = DB.C("vuln")
-var FlowCollect = DB.C("flow")
+var Session = &mgo.Session{}
+var DB = &mgo.Database{}
+var VulnCollect = &mgo.Collection{}
+var FlowCollect = &mgo.Collection{}
+
+func init() {
+	Session, err := mgo.Dial("mongodb://192.168.116.128:27017/")
+	// panic error
+	if err != nil {
+		panic("Database connection failed: " + err.Error())
+	}
+	DB = Session.DB("goFoxy")
+	VulnCollect = DB.C("vuln")
+	FlowCollect = DB.C("flow")
+}
 
 // 漏洞信息
 type Vuln struct {
@@ -98,6 +109,10 @@ func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
 	if err == nil {
 		flow.Port = port
 	}
+	// Default 80
+	if port == 0 {
+		port = 80
+	}
 	flow.Method = ctx.Req.Method
 	flow.Path = ctx.Req.URL.Path
 	// Request Query
@@ -132,6 +147,10 @@ func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
 	}
 
 	// Response
+	// check Empty Response
+	if ctx.Resp == nil {
+		return flow
+	}
 	flow.ResponseStatusCode = ctx.Resp.StatusCode
 	flow.ResponseHeaders = make(map[string]string)
 	for key, value := range ctx.Resp.Header {
@@ -157,6 +176,20 @@ func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
 	flow.ResponseTime = ctx.UserData.(*FlowContext).ResponseTime
 
 	return flow
+}
+
+// Prevent other protocol, such as (ws/wss)
+func (this Flow) GetSafeBaseURL() string {
+	scheme := this.Scheme
+	if scheme == "ws" {
+		scheme = "http"
+	}
+	if scheme == "wss" {
+		scheme = "https"
+	} else {
+		scheme = "http" // default http
+	}
+	return scheme + "://" + this.Host + ":" + strconv.Itoa(this.Port)
 }
 
 // 将单条漏洞信息入库
@@ -208,6 +241,17 @@ func B64Decode(content string) string {
 	} else {
 		return string(decodeBytes)
 	}
+}
+
+// 简单计算字符串A在字符串B中的占比
+func GetContainsWeight(keyword, content string) float32 {
+	kLength := len(keyword)
+	cLength := len(content)
+	if kLength > cLength {
+		return 0.0
+	}
+	weight := float32(1 / (cLength / kLength))
+	return weight
 }
 
 // 使用 Jaccard系数计算文本相似度，用作判断 404页面

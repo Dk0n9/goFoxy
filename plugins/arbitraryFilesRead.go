@@ -68,6 +68,6 @@ func readFile(flow common.Flow, url string) {
 }
 
 func (this arbitraryFilesRead) Process(flow common.Flow) {
-	newURL := flow.Scheme + "://" + flow.Host + "/"
+	newURL := flow.GetSafeBaseURL()
 	go readFile(flow, newURL)
 }

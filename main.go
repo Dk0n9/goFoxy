@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/elazarl/goproxy"
+	"github.com/selslack/goproxy"
 	"log"
 	"net/http"
 	_ "goFoxy/plugins"
@@ -14,24 +14,25 @@ import (
 func main() {
 	foxy := goproxy.NewProxyHttpServer()
 	foxy.Verbose = true
-	foxy.OnRequest().HandleConnect(goproxy.AlwaysMitm) // MITM https
+	foxy.OnRequest().HandleConnect(goproxy.AlwaysMitm) // MITM
 
 	foxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			// 初始化开始
-			// 如果存在 POST或 GET参数，则调用 ParseForm()
+			// Start
+			// Call ParseForm() if have parameters
 			if req.ContentLength > 0 || req.URL.RawQuery != "" {
-				// 复制 req.Body
+				// Copy req.Body
 				bodyBytes, _ := ioutil.ReadAll(req.Body)
 				req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
-				// ParseForm()会将 req.Body.sawEOF设置为 true，调用完后需要重置 req.Body，否则进入 OnResponse后会报错
+				// ParseForm() will set req.Body.sawEOF to true
+				// and need to reset the req.Body after the ParseForm()
 				req.ParseForm()
-				// 重置req.Body的状态
+				// Reset req.Body
 				req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 			}
 			ctx.UserData = &common.FlowContext{}
 			ctx.UserData.(*common.FlowContext).RequestTime = common.GetNowTime()
-			// 初始化结束
+			// End
 			return req, nil
 		})
 	foxy.OnResponse().DoFunc(
@@ -40,14 +41,15 @@ func main() {
 			ctx.UserData.(*common.FlowContext).ResponseTime = common.GetNowTime()
 			flow := common.GenrateFlow(ctx) // 转换成 Flow结构
 
-			// 异步执行插件
+			// Execute plugins
 			availables := manager.GetAvailablePlugins()
 			for _, plugin := range availables {
 				go plugin.Process(flow)
 			}
+			// Insert to database
 			isInsert := common.LogFlow(flow)
 			if !isInsert {
-				log.Printf("Flow: %s insert failed", flow.ID)
+				log.Printf("URL: %s insert failed", flow.URL)
 			}
 			return resp
 		})
