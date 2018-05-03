@@ -42,14 +42,15 @@ type Vuln struct {
 }
 
 type FlowContext struct {
-	RequestTime  string
-	ResponseTime string
+	RequestTime  int64
+	ResponseTime int64
 }
 
 // 流量信息
 type Flow struct {
 	// UUID
-	ID string
+	ID      string
+	Session int64
 	// Request
 	HttpVersion string
 	RemoteAddr  string
@@ -74,9 +75,9 @@ type Flow struct {
 	ResponseBody       string
 	ContentLength      int64
 	// Other
-	CreateTime   string
-	RequestTime  string
-	ResponseTime string
+	CreateTime   int64
+	RequestTime  int64
+	ResponseTime int64
 }
 
 // 将 ctx结构转成 Flow结构，方便读取和入库
@@ -95,6 +96,7 @@ func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
 		}
 	}
 
+	flow.Session = ctx.Session
 	flow.HttpVersion = ctx.Req.Proto
 	flow.RemoteAddr = ctx.Req.RemoteAddr
 	flow.Scheme = ctx.Req.URL.Scheme
@@ -225,8 +227,8 @@ func IsB64(content string) bool {
 	}
 }
 
-func GetNowTime() string {
-	return time.Now().Format("2006-01-02 15:04:05")
+func GetNowTime() int64 {
+	return time.Now().Unix()
 }
 
 func URLDecode(content string) (string, error) {
