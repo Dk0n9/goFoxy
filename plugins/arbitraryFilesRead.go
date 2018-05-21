@@ -61,7 +61,7 @@ func readFile(flow common.Flow, url string) {
 				tmpInfo.Title = "任意文件读取"
 				tmpInfo.Level = "中危"
 				tmpInfo.Content = fmt.Sprintf("%s 可能存在任意文件读取漏洞", linuxURL)
-				common.LogVulnInfo(tmpInfo)
+				tmpInfo.LogVulnInfo()
 			}
 		}
 	}

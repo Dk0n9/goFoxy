@@ -9,7 +9,67 @@ import (
 	"bytes"
 	"goFoxy/common"
 	"goFoxy/manager"
+	"github.com/gin-gonic/gin"
+	"gopkg.in/mgo.v2/bson"
 )
+
+func getLatest(ctx *gin.Context) {
+	common.WSHandler.HandleRequest(ctx.Writer, ctx.Request)
+}
+
+func getFlowDetail(ctx *gin.Context) {
+	response := gin.H{
+		"error":  "",
+		"result": "",
+	}
+	flowID := ctx.Param("flowid")
+	var result []interface{}
+	var code int
+	err := common.FlowCollect.Find(bson.M{"flowid": flowID}).One(result)
+	if err != nil {
+		code = 404
+		response["error"] = err.Error()
+	} else {
+		code = 200
+		response["result"] = result
+	}
+	ctx.JSON(code, response)
+}
+
+func getFlowVulns(ctx *gin.Context) {
+	response := gin.H{
+		"error":  "",
+		"result": "",
+	}
+	flowID := ctx.Param("flowid")
+	var result []interface{}
+	var code int
+	err := common.VulnCollect.Find(bson.M{"flowid": flowID}).All(result)
+	if err != nil {
+		code = 404
+		response["error"] = err.Error()
+	} else {
+		code = 200
+		response["result"] = result
+	}
+	ctx.JSON(code, response)
+}
+
+func StartWeb(addr ...string) {
+	var address string
+	if len(addr) == 0 {
+		address = "0.0.0.0:35277"
+	} else {
+		address = addr[0]
+	}
+	router := gin.Default()
+	// set route
+	router.GET("/latest", getLatest)
+	router.GET("/flow/:flowid", getFlowDetail)
+	router.GET("/vuln/:flowid", getFlowVulns)
+
+	router.Run(address) // listen and serve on 0.0.0.0:35277
+}
 
 func main() {
 	foxy := goproxy.NewProxyHttpServer()
@@ -31,8 +91,12 @@ func main() {
 				req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 			}
 			ctx.UserData = &common.FlowContext{}
+			ctx.UserData.(*common.FlowContext).FlowID = common.GenrateFlowID()
 			ctx.UserData.(*common.FlowContext).RequestTime = common.GetNowTime()
 			// End
+			// Broadcast
+			tmpFlow := common.GenrateFlow(ctx)
+			tmpFlow.Broadcast("add")
 			return req, nil
 		})
 	foxy.OnResponse().DoFunc(
@@ -47,12 +111,14 @@ func main() {
 				go plugin.Process(flow)
 			}
 			// Insert to database
-			isInsert := common.LogFlow(flow)
+			flow.Broadcast("update")
+			isInsert := flow.LogFlow()
 			if !isInsert {
 				log.Printf("URL: %s insert failed", flow.URL)
 			}
 			return resp
 		})
 
+	go StartWeb("0.0.0.0:35277") // start the web server
 	log.Fatal(http.ListenAndServe(":8080", foxy))
 }

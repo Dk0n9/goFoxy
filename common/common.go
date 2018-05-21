@@ -9,12 +9,15 @@ import (
 	"bytes"
 	"strconv"
 	"github.com/selslack/goproxy"
-	"github.com/jakehl/goid"
 	"github.com/deckarep/golang-set"
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/mgo.v2"
+	"gopkg.in/olahol/melody.v1"
+	"encoding/json"
+	"github.com/jakehl/goid"
 )
 
+var WSHandler = melody.New()
 var Session = &mgo.Session{}
 var DB = &mgo.Database{}
 var VulnCollect = &mgo.Collection{}
@@ -33,15 +36,16 @@ func init() {
 
 // 漏洞信息
 type Vuln struct {
-	FlowID     string
-	Host       string
-	Title      string
-	Level      string
-	Content    string
-	CreateTime string
+	FlowID     string `json:"flowid"`
+	Host       string `json:"host"`
+	Title      string `json:"title"`
+	Level      string `json:"level"`
+	Content    string `json:"content"`
+	CreateTime int64  `json:"createtime"`
 }
 
 type FlowContext struct {
+	FlowID       string
 	RequestTime  int64
 	ResponseTime int64
 }
@@ -49,53 +53,59 @@ type FlowContext struct {
 // 流量信息
 type Flow struct {
 	// UUID
-	ID      string
-	Session int64
+	ID      string `json:"id"`
+	Session int64  `json:"session"`
 	// Request
-	HttpVersion string
-	RemoteAddr  string
-	Scheme      string
-	BasicAuth   map[string]string
-	Host        string
-	Port        int
-	Method      string
-	Path        string
-	Query       map[string]string // GET 参数
-	Fragment    string            // URL HASH 内容
-	URL         string            // 完整URL
-	Headers     map[string]string // 请求头
-	Cookies     map[string]string
-	Form        map[string]string // GET/POST/PUT 内容
-	PostForm    map[string]string // POST 内容
+	HttpVersion   string            `json:"httpVersion"` // e.g. "HTTP/1.0"
+	RemoteAddr    string            `json:"remoteAddr"`
+	Scheme        string            `json:"scheme"` // e.g. "http"
+	BasicAuth     map[string]string `json:"basicAuth"`
+	Host          string            `json:"host"`
+	Port          int               `json:"port"`
+	Method        string            `json:"method"`
+	Path          string            `json:"path"`
+	Query         map[string]string `json:"query"`    // GET 参数
+	Fragment      string            `json:"fragment"` // URL HASH 内容
+	URL           string            `json:"url"`      // uri
+	Headers       map[string]string `json:"headers"`
+	Cookies       map[string]string `json:"cookies"`
+	Form          map[string]string `json:"form"`     // GET/POST/PUT 内容
+	PostForm      map[string]string `json:"postform"` // POST 内容
+	ContentLength int64             `json:"contentLength"`
 	// MultipartForm *multipart.Form  // 上传内容，暂时不处理
 	// Response
-	ResponseStatusCode int
-	ResponseHeaders    map[string]string
-	ResponseCookies    map[string]string
-	ResponseBody       string
-	ContentLength      int64
+	ResponseHttpVersion   string            `json:"responseHttpVersion"` // e.g. "HTTP/1.0"
+	ResponseStatus        string            `json:"responseStatus"`      // e.g. "200 OK"
+	ResponseStatusCode    int               `json:"responseStatusCode"`  // e.g. 200
+	ResponseHeaders       map[string]string `json:"responseHeaders"`
+	ResponseCookies       map[string]string `json:"responseCookies"`
+	ResponseBody          string            `json:"responseBody"`
+	ResponseContentLength int64             `json:"responseContentLength"`
 	// Other
-	CreateTime   int64
-	RequestTime  int64
-	ResponseTime int64
+	CreateTime   int64 `json:"createTime"`
+	RequestTime  int64 `json:"requestTime"`
+	ResponseTime int64 `json:"responseTime"`
 }
 
-// 将 ctx结构转成 Flow结构，方便读取和入库
-func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
-	flow := Flow{}
-
-	// 检测生成的UUID在库中是否存在
+// 检测生成的UUID在库中是否存在
+func GenrateFlowID() string {
 	for {
 		tmpID := goid.NewV4UUID().String() // byte to string
 		num, _ := FlowCollect.Find(bson.M{"flowid": tmpID}).Count()
 		if num > 0 {
 			continue
 		} else {
-			flow.ID = tmpID
-			break
+			return tmpID
 		}
 	}
+}
 
+// 将 ctx结构转成 Flow结构，方便读取和入库
+func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
+	flow := Flow{}
+
+	// ============ Request ============
+	flow.ID = ctx.UserData.(*FlowContext).FlowID
 	flow.Session = ctx.Session
 	flow.HttpVersion = ctx.Req.Proto
 	flow.RemoteAddr = ctx.Req.RemoteAddr
@@ -113,7 +123,7 @@ func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
 	}
 	// Default 80
 	if port == 0 {
-		port = 80
+		flow.Port = 80
 	}
 	flow.Method = ctx.Req.Method
 	flow.Path = ctx.Req.URL.Path
@@ -147,35 +157,38 @@ func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
 		content := strings.Join(value, ", ")
 		flow.PostForm[key] = content
 	}
+	flow.ContentLength = ctx.Req.ContentLength
 
-	// Response
+	flow.RequestTime = ctx.UserData.(*FlowContext).RequestTime
+
+	// ============ Response ============
 	// check Empty Response
-	if ctx.Resp == nil {
-		return flow
+	if ctx.Resp != nil {
+		flow.ResponseStatusCode = ctx.Resp.StatusCode
+		flow.ResponseStatus = ctx.Resp.Status
+		flow.ResponseHeaders = make(map[string]string)
+		for key, value := range ctx.Resp.Header {
+			content := strings.Join(value, ", ")
+			flow.ResponseHeaders[key] = content
+		}
+		flow.ResponseCookies = make(map[string]string)
+		for _, value := range ctx.Resp.Cookies() {
+			flow.ResponseCookies[value.Name] = value.Value
+		}
+		// Read response Body && Reset
+		tmpBody, _ := ioutil.ReadAll(ctx.Resp.Body)
+		flow.ResponseBody = string(tmpBody)
+		flow.ResponseContentLength = int64(len(tmpBody))
+		ctx.Resp.Body.Close()
+		body := ioutil.NopCloser(bytes.NewReader(tmpBody))
+		ctx.Resp.Body = body
+		ctx.Resp.ContentLength = int64(len(tmpBody))
+		ctx.Resp.Header.Set("Content-Length", strconv.Itoa(len(tmpBody)))
+
+		flow.ResponseTime = ctx.UserData.(*FlowContext).ResponseTime
 	}
-	flow.ResponseStatusCode = ctx.Resp.StatusCode
-	flow.ResponseHeaders = make(map[string]string)
-	for key, value := range ctx.Resp.Header {
-		content := strings.Join(value, ", ")
-		flow.ResponseHeaders[key] = content
-	}
-	flow.ResponseCookies = make(map[string]string)
-	for _, value := range ctx.Resp.Cookies() {
-		flow.ResponseCookies[value.Name] = value.Value
-	}
-	// Read response Body && Reset
-	tmpBody, err := ioutil.ReadAll(ctx.Resp.Body)
-	flow.ResponseBody = string(tmpBody)
-	flow.ContentLength = int64(len(tmpBody))
-	ctx.Resp.Body.Close()
-	body := ioutil.NopCloser(bytes.NewReader(tmpBody))
-	ctx.Resp.Body = body
-	ctx.Resp.ContentLength = int64(len(tmpBody))
-	ctx.Resp.Header.Set("Content-Length", strconv.Itoa(len(tmpBody)))
 	// Other
 	flow.CreateTime = GetNowTime()
-	flow.RequestTime = ctx.UserData.(*FlowContext).RequestTime
-	flow.ResponseTime = ctx.UserData.(*FlowContext).ResponseTime
 
 	return flow
 }
@@ -194,14 +207,30 @@ func (this Flow) GetSafeBaseURL() string {
 	return scheme + "://" + this.Host + ":" + strconv.Itoa(this.Port)
 }
 
-// 将单条漏洞信息入库
-func LogVulnInfo(info Vuln) bool {
-	num, _ := VulnCollect.Find(bson.M{"host": info.Host, "content": info.Content}).Count()
+func (this Vuln) Broadcast() {
+	jsonInfo, err := json.Marshal(struct {
+		Type string `json:"type"`
+		Cmd  string `json:"cmd"`
+		Flow Vuln   `json:"data"`
+	}{
+		Type: "vuln",
+		Cmd:  "add",
+		Flow: this,
+	})
+	if err == nil {
+		WSHandler.Broadcast(jsonInfo)
+	}
+}
+
+// insert to database
+func (this Vuln) LogVulnInfo() bool {
+	num, _ := VulnCollect.Find(bson.M{"host": this.Host, "content": this.Content}).Count()
 	if num > 0 {
 		return false
 	}
-	info.CreateTime = GetNowTime()
-	err := VulnCollect.Insert(info)
+	this.CreateTime = GetNowTime()
+	this.Broadcast()
+	err := VulnCollect.Insert(this)
 	if err == nil {
 		return true
 	} else {
@@ -209,9 +238,24 @@ func LogVulnInfo(info Vuln) bool {
 	}
 }
 
-// 将单条流量信息入库
-func LogFlow(flow Flow) bool {
-	err := FlowCollect.Insert(flow)
+func (this Flow) Broadcast(mode string) {
+	jsonInfo, err := json.Marshal(struct {
+		Type string `json:"type"`
+		Cmd  string `json:"cmd"`
+		Flow Flow   `json:"data"`
+	}{
+		Type: "vuln",
+		Cmd:  mode,
+		Flow: this,
+	})
+	if err == nil {
+		WSHandler.Broadcast(jsonInfo)
+	}
+}
+
+// insert to database
+func (this Flow) LogFlow() bool {
+	err := FlowCollect.Insert(this)
 	if err == nil {
 		return true
 	} else {

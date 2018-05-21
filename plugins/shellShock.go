@@ -86,7 +86,7 @@ func testShellShock(flow common.Flow, url string) {
 				tmpInfo.Title = "破壳（Shellshock）漏洞"
 				tmpInfo.Level = "高危"
 				tmpInfo.Content = fmt.Sprintf("%s 可能存在破壳漏洞", newURL)
-				common.LogVulnInfo(tmpInfo)
+				tmpInfo.LogVulnInfo()
 			}
 		}
 	}

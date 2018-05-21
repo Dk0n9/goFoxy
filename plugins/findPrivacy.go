@@ -77,7 +77,7 @@ func checkControl(pKey, pValue, cKey, cValue string, flow common.Flow) {
 		tmp.Title = "响应头中的 Set-Cookie可能允许被控制"
 		tmp.Level = "低危"
 		tmp.Content = fmt.Sprintf("参数: %s 可能可以控制 Set-Cookie中 %s的内容", pKey, cKey)
-		common.LogVulnInfo(tmp)
+		tmp.LogVulnInfo()
 	}
 }
 
@@ -90,7 +90,7 @@ func (this findPrivacy) Process(flow common.Flow) {
 			tmpInfo.Title = "Cookie内容可能在页面中可控"
 			tmpInfo.Level = "低危"
 			tmpInfo.Content = fmt.Sprintf("Cookie字段: %s", key)
-			common.LogVulnInfo(tmpInfo)
+			tmpInfo.LogVulnInfo()
 		}
 	}
 	// 检查所有请求参数是否可以控制响应头的 Set-Cookie
