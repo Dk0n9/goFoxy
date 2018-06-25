@@ -94,41 +94,42 @@ func (this findPrivacy) Process(flow common.Flow) {
 		}
 	}
 	// 检查所有请求参数是否可以控制响应头的 Set-Cookie
-	if len(flow.ResponseCookies) != 0 {
-		for cKey, cValue := range flow.ResponseCookies {
-			for pKey, pValue := range flow.Form {
-				if pValue == "" {
-					continue
-				}
+	if len(flow.ResponseCookies) >= 0 {
+		return
+	}
+	for cKey, cValue := range flow.ResponseCookies {
+		for pKey, pValue := range flow.Form {
+			if pValue == "" {
+				continue
+			}
 
-				// 字符串包含
-				if strings.Contains(cValue, pValue) {
-					checkControl(pKey, pValue, cKey, cValue, flow)
-					continue
-				}
+			// 字符串包含
+			if strings.Contains(cValue, pValue) {
+				checkControl(pKey, pValue, cKey, cValue, flow)
+				continue
+			}
 
-				// 测试是否是 Base64编码
-				isB64Encoded := common.IsB64(pKey)
-				if isB64Encoded {
-					b64Value := common.B64Decode(pValue)
-					if b64Value != "" {
-						if strings.Contains(cValue, b64Value) {
-							checkControl(pKey, b64Value, cKey, cValue, flow)
-							continue
-						}
-					}
-				}
-
-				// 测试是否是 URLEncode
-				urlDecodeValue, err := common.URLDecode(pValue)
-				if err == nil {
-					if urlDecodeValue == pValue {
-						continue
-					} // 与原始内容不变则 contine
-					if strings.Contains(cValue, urlDecodeValue) {
-						checkControl(pKey, urlDecodeValue, cKey, cValue, flow)
+			// 测试是否是 Base64编码
+			isB64Encoded := common.IsB64(pKey)
+			if isB64Encoded {
+				b64Value := common.B64Decode(pValue)
+				if b64Value != "" {
+					if strings.Contains(cValue, b64Value) {
+						checkControl(pKey, b64Value, cKey, cValue, flow)
 						continue
 					}
+				}
+			}
+
+			// 测试是否是 URLEncode
+			urlDecodeValue, err := common.URLDecode(pValue)
+			if err == nil {
+				if urlDecodeValue == pValue {
+					continue
+				} // 与原始内容不变则 contine
+				if strings.Contains(cValue, urlDecodeValue) {
+					checkControl(pKey, urlDecodeValue, cKey, cValue, flow)
+					continue
 				}
 			}
 		}
