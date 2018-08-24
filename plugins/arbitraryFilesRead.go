@@ -15,7 +15,7 @@ func init() {
 	pl.Name = "arbitraryFilesRead"
 	pl.Author = "dk"
 	pl.Default = true
-	pl.Help = "任意文件读取检测"
+	pl.Help = "WEB容器任意文件读取检测"
 	manager.Regist(pl.Name, pl)
 }
 
@@ -55,12 +55,12 @@ func readFile(flow common.Flow, url string) {
 		if linuxResp.StatusCode == 200 {
 			pContent, _ := ioutil.ReadAll(linuxResp.Body)
 			linuxResp.Body.Close()
-			if strings.Contains(string(pContent), "root:x:") {
+			if strings.Contains(string(pContent), "root:") {
 				tmpInfo := common.Vuln{FlowID: flow.ID}
 				tmpInfo.Host = flow.Host
 				tmpInfo.Title = "任意文件读取"
 				tmpInfo.Level = "中危"
-				tmpInfo.Content = fmt.Sprintf("%s 可能存在任意文件读取漏洞", linuxURL)
+				tmpInfo.Content = fmt.Sprintf("%s 可能存在 WEB容器任意文件读取漏洞", linuxURL)
 				tmpInfo.LogVulnInfo()
 			}
 		}
