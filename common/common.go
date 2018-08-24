@@ -15,6 +15,7 @@ import (
 	"gopkg.in/olahol/melody.v1"
 	"encoding/json"
 	"github.com/jakehl/goid"
+	"fmt"
 )
 
 var WSHandler = melody.New()
@@ -34,7 +35,7 @@ func init() {
 	FlowCollect = DB.C("flow")
 }
 
-// 漏洞信息
+// Vulnerability information
 type Vuln struct {
 	FlowID     string `json:"flowid"`
 	Host       string `json:"host"`
@@ -50,7 +51,7 @@ type FlowContext struct {
 	ResponseTime int64
 }
 
-// 流量信息
+// HTTPFlow information
 type Flow struct {
 	// UUID
 	ID      string `json:"id"`
@@ -64,15 +65,15 @@ type Flow struct {
 	Port          int               `json:"port"`
 	Method        string            `json:"method"`
 	Path          string            `json:"path"`
-	Query         map[string]string `json:"query"`    // GET 参数
-	Fragment      string            `json:"fragment"` // URL HASH 内容
+	Query         map[string]string `json:"query"`    // GET parameter
+	Fragment      string            `json:"fragment"` // URL HASH content
 	URL           string            `json:"url"`      // uri
 	Headers       map[string]string `json:"headers"`
 	Cookies       map[string]string `json:"cookies"`
-	Form          map[string]string `json:"form"`     // GET/POST/PUT 内容
-	PostForm      map[string]string `json:"postform"` // POST 内容
+	Form          map[string]string `json:"form"`     // GET/POST/PUT content
+	PostForm      map[string]string `json:"postform"` // POST content
 	ContentLength int64             `json:"contentLength"`
-	// MultipartForm *multipart.Form  // 上传内容，暂时不处理
+	// MultipartForm *multipart.Form  // MultipartForm, temporarily not processed
 	// Response
 	ResponseHttpVersion   string            `json:"responseHttpVersion"` // e.g. "HTTP/1.0"
 	ResponseStatus        string            `json:"responseStatus"`      // e.g. "200 OK"
@@ -87,7 +88,7 @@ type Flow struct {
 	ResponseTime int64 `json:"responseTime"`
 }
 
-// 检测生成的UUID在库中是否存在
+// Generate UUID (will check if it exists in the DB)
 func GenrateFlowID() string {
 	for {
 		tmpID := goid.NewV4UUID().String() // byte to string
@@ -100,7 +101,7 @@ func GenrateFlowID() string {
 	}
 }
 
-// 将 ctx结构转成 Flow结构，方便读取和入库
+// Convert ctx to Flow
 func GenrateFlow(ctx *goproxy.ProxyCtx) Flow {
 	flow := Flow{}
 
@@ -204,7 +205,12 @@ func (this Flow) GetSafeBaseURL() string {
 	} else {
 		scheme = "http" // default http
 	}
-	return scheme + "://" + this.Host + ":" + strconv.Itoa(this.Port)
+	// Fixed multiple ports in url
+	if strings.Contains(this.Host, ":") {
+		return scheme + "://" + this.Host
+	} else {
+		return scheme + "://" + this.Host + ":" + strconv.Itoa(this.Port)
+	}
 }
 
 func (this Vuln) Broadcast() {
@@ -228,6 +234,7 @@ func (this Vuln) LogVulnInfo() bool {
 	if num > 0 {
 		return false
 	}
+	fmt.Println(this)
 	this.CreateTime = GetNowTime()
 	this.Broadcast()
 	err := VulnCollect.Insert(this)
@@ -289,7 +296,7 @@ func B64Decode(content string) string {
 	}
 }
 
-// 简单计算字符串A在字符串B中的占比
+// Simply calculate the proportion of keyword in content
 func GetContainsWeight(keyword, content string) float32 {
 	kLength := len(keyword)
 	cLength := len(content)
@@ -300,7 +307,7 @@ func GetContainsWeight(keyword, content string) float32 {
 	return weight
 }
 
-// 使用 Jaccard系数计算文本相似度，用作判断 404页面
+// Calculate text similarity using Jaccard, used to identify 404 page
 func SimilarText(first, second string) float64 {
 	if first == second {
 		return float64(1)
