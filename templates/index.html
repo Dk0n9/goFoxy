@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>goFoxy Panel</title>
+</head>
+<body>
+
+</body>
+<script>
+    let ws = new WebSocket("ws://localhost:35277/latest");
+    ws.onmessage = function (evt) {
+        let result = JSON.parse(evt.data);
+        console.log(result);
+        let type = result.type;
+        let mode = result.cmd;
+        if (type === "vuln" && mode === "add") {
+            let li = document.createElement("li");
+            li.innerText = result.data["content"];
+            document.body.appendChild(li);
+        } else {
+            console.log(type, mode);
+        }
+    };
+</script>
+</html>

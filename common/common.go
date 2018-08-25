@@ -251,7 +251,7 @@ func (this Flow) Broadcast(mode string) {
 		Cmd  string `json:"cmd"`
 		Flow Flow   `json:"data"`
 	}{
-		Type: "vuln",
+		Type: "flow",
 		Cmd:  mode,
 		Flow: this,
 	})

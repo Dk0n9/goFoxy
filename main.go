@@ -13,6 +13,10 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+func webIndex(ctx *gin.Context) {
+	ctx.HTML(http.StatusOK, "index.html", gin.H{})
+}
+
 func getLatest(ctx *gin.Context) {
 	common.WSHandler.HandleRequest(ctx.Writer, ctx.Request)
 }
@@ -58,12 +62,14 @@ func getFlowVulns(ctx *gin.Context) {
 func StartWeb(addr ...string) {
 	var address string
 	if len(addr) == 0 {
-		address = "0.0.0.0:35277"
+		address = "localhost:35277"
 	} else {
 		address = addr[0]
 	}
 	router := gin.Default()
 	// set route
+	router.LoadHTMLGlob("templates/*")
+	router.GET("/", webIndex)
 	router.GET("/latest", getLatest)
 	router.GET("/flow/:flowid", getFlowDetail)
 	router.GET("/vuln/:flowid", getFlowVulns)
